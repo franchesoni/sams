@@ -2,9 +2,10 @@ import tqdm
 from PIL import Image
 import torch
 import numpy as np
-import schedulefree 
+import schedulefree
 
 from dataset import HypersimSegmentationDataset
+from evaluate_sam2 import sample_result
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
@@ -86,7 +87,7 @@ def main(M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0):
     print("Optimizing...")
     # build random logits
     X = (
-        (torch.randn((M, H * W))*2).to(device).requires_grad_(True) 
+        (torch.randn((M, H * W))).to(device).requires_grad_(True)
     )  # tensor to be optimized of shape (n_masks, H, W)
     # optimizer = schedulefree.AdamWScheduleFree([X], lr=lr)
     optimizer = schedulefree.RAdamScheduleFree([X], lr=lr)
@@ -109,26 +110,31 @@ def main(M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0):
         # )
         optimizer.step()
 
-        if i % 10 == 0:
-            # print(f"Step {i}, X mean: {X.mean().item()}, std: {X.std().item()}")
-            # print(
-            #     f"Step {i}, z mean: {z.mean().item()}, min: {z.min().item()}, max: {z.max().item()}"
-            # )
-            # print("-" * 30)
-            # print(f"Step {i}, loss={loss.item()}")
-            # print("-" * 30)
+        if i % 10 == 0 or i < 20:
             print(f"Step {i}, loss={loss.item()}", end="\r")
+            z = torch.softmax(X / temp, dim=0)
+            classes = z.argmax(dim=0).view(H, W).cpu().numpy()
+            Image.fromarray(
+                (classes / classes.max() * (256**1 - 1)).astype(np.uint8)
+            ).save(f"vis/classes_live_{i}.png")
     print(f"Step {i}, loss={loss.item()}")
 
-    # visualize
+    # score and visualize
     z = torch.softmax(X / temp, dim=0)
     classes = z.argmax(dim=0).view(H, W).cpu().numpy()
-    # Image.fromarray((classes / classes.max() * (256**2 - 1)).astype(np.uint16)).save(
+    masks = (
+        (z.view(M, H, W) == z.max(dim=0).values.view(1, H, W)).detach().cpu().numpy()
+    )
+    result = sample_result(masks, new_labels, device)
+    print("mIoU:", result["mIoU"])
     Image.fromarray((classes / classes.max() * (256**1 - 1)).astype(np.uint8)).save(
         "vis/classes.png"
     )
+
 
 if __name__ == "__main__":
     from fire import Fire
 
     Fire(main)
+
+# python oracle_optim.py --M=256 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1
