@@ -36,6 +36,7 @@ def get_mask_generator(
     points_per_batch,
     crop_nms_thresh,
     crop_n_layers,
+    device
 ):
     sam2_checkpoint = (
         "/home/franchesoni/sam2/segment-anything-2/checkpoints/sam2.1_hiera_tiny.pt"
@@ -105,6 +106,7 @@ def main(
         points_per_batch=points_per_batch,
         crop_nms_thresh=crop_nms_thresh,
         crop_n_layers=crop_n_layers,
+        device=device,
     )
 
     eval_ds = HypersimSegmentationDataset()
