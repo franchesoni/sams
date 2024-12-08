@@ -83,7 +83,7 @@ def sample_result(masks, labels, device):
         "L": len(unique_labels),
         "M": len(masks),
         "max_ious": max_ious,
-        "mIoU": ious.mean().item(),
+        "mIoU": np.mean(max_ious),
     }
 
 
