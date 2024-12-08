@@ -11,6 +11,13 @@ device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
 # define losses
+def loss_tv(z, H, W):  # total variation loss
+    z = z.view(z.shape[0], 1, H, W)
+    return torch.mean(torch.abs(z[:, :, :, :-1] - z[:, :, :, 1:])) + torch.mean(
+        +torch.abs(z[:, :, :-1, :] - z[:, :, 1:, :])
+    )
+
+
 def loss_reg(f, eps=5):
     return torch.mean(torch.relu(f**2 - eps**2))
 
@@ -58,7 +65,7 @@ def loss_area(z):  # big areas are good, small areas are bad
     return torch.log(torch.sum(z, dim=1)).mean()
 
 
-def main(M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0):
+def main(M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0, w_tv=0):
     torch.random.manual_seed(0)
     dataset = HypersimSegmentationDataset()
     image, labels = dataset[0]
@@ -102,7 +109,8 @@ def main(M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0):
         lfit = loss_fit(z, gts, temperature=temp) if w_fit > 0 else 0
         larea = loss_area(z) if w_area > 0 else 0
         lreg = loss_reg(X) if w_reg > 0 else 0
-        loss = lfit * w_fit + larea * w_area + lreg * w_reg
+        ltv = loss_tv(X, H, W)
+        loss = lfit * w_fit + larea * w_area + lreg * w_reg + ltv * w_tv
         # optimize
         loss.backward()
         # print(
