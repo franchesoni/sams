@@ -1,3 +1,4 @@
+from pathlib import Path
 import tqdm
 import gc
 from PIL import Image
@@ -88,13 +89,18 @@ def main(
     w_reg=0,
     w_tv=0,
     w_tree=0,
+    outdir="vis",
 ):
+    # get script name and parameters
+    outdir = Path(outdir)
+    outdir.mkdir(exist_ok=True, parents=True)
+    log_dict = locals() | {"file": __file__}
     torch.random.manual_seed(0)
     dataset = HypersimSegmentationDataset()
     image, labels = dataset[0]
     # visualize labels
     Image.fromarray((labels / labels.max() * (255**2 - 1)).astype(np.uint16)).save(
-        "vis/labels.png"
+        outdir / "labels.png"
     )
 
     # build mask generator
@@ -145,7 +151,7 @@ def main(
         new_labels[mask.view(H, W).cpu().numpy()] = i
     Image.fromarray(
         (new_labels / new_labels.max() * (255**2 - 1)).astype(np.uint16)
-    ).save("vis/gts.png")
+    ).save(outdir / "gts.png")
 
     print("Optimizing...")
     # build random logits
@@ -167,7 +173,9 @@ def main(
         lreg = loss_reg(X) if w_reg > 0 else 0
         ltv = loss_tv(X, H, W)
         ltree = loss_tree(z) if w_tree > 0 else 0
-        loss = lfit * w_fit + larea * w_area + lreg * w_reg + ltv * w_tv
+        loss = (
+            lfit * w_fit + larea * w_area + lreg * w_reg + ltv * w_tv + ltree * w_tree
+        )
         # optimize
         loss.backward()
         # print(
@@ -181,7 +189,7 @@ def main(
             classes = z.argmax(dim=0).view(H, W).cpu().numpy()
             Image.fromarray(
                 (classes / classes.max() * (256**1 - 1)).astype(np.uint8)
-            ).save(f"vis/classes_live_{i}.png")
+            ).save(outdir / f"classes_live_{i}.png")
     print(f"Step {i}, loss={loss.item()}")
 
     # score and visualize
@@ -198,9 +206,14 @@ def main(
     )
     print("adjusted mIoU:", result["mIoU"])
     print("sam mIoU:", sam_res["mIoU"])
+    log_dict["sam_mIoU"] = sam_res["mIoU"]
+    log_dict["adjusted_mIoU"] = result["mIoU"]
+    import json
+    with open(outdir / "log.json", "w") as f:
+        json.dump(log_dict, f)
 
     Image.fromarray((classes / classes.max() * (256**1 - 1)).astype(np.uint8)).save(
-        "vis/classes.png"
+        outdir / "classes.png"
     )
 
 
@@ -209,7 +222,4 @@ if __name__ == "__main__":
 
     Fire(main)
 
-# python sam_optim.py --M=256 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1
-
-# python sam_optim.py --sam_masks=1000 --M=1000 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1
-# python sam_optim.py --sam_masks=512 --M=512 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1
+# python sam_optim_tree.py --sam_masks=512 --M=512 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1

@@ -1,3 +1,4 @@
+from pathlib import Path
 import tqdm
 import gc
 from PIL import Image
@@ -66,7 +67,22 @@ def loss_area(z):  # big areas are good, small areas are bad
     return torch.log(torch.sum(z, dim=1)).mean()
 
 
-def main(max_sam_masks=1000, M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_reg=0, w_tv=0):
+def main(
+    max_sam_masks=1000,
+    M=32,
+    lr=1,
+    steps=10,
+    temp=1,
+    w_fit=0,
+    w_area=0,
+    w_reg=0,
+    w_tv=0,
+    outdir="vis",
+):
+    # get script name and parameters
+    outdir = Path(outdir)
+    outdir.mkdir(exist_ok=True, parents=True)
+    log_dict = locals() | {"file": __file__}
     torch.random.manual_seed(0)
     dataset = HypersimSegmentationDataset()
     image, labels = dataset[0]
@@ -102,9 +118,7 @@ def main(max_sam_masks=1000, M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_
     print("-" * 80)
     print("-" * 80)
     mean_scores = torch.from_numpy((stability_scores + predicted_ious) / 2)
-    selected_indices = torch.argsort(
-        mean_scores, descending=True
-    )[:max_sam_masks]
+    selected_indices = torch.argsort(mean_scores, descending=True)[:max_sam_masks]
     masks = masks[selected_indices]
     mean_scores = mean_scores[selected_indices]
 
@@ -125,7 +139,7 @@ def main(max_sam_masks=1000, M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_
         new_labels[mask.view(H, W).cpu().numpy()] = i
     Image.fromarray(
         (new_labels / new_labels.max() * (255**2 - 1)).astype(np.uint16)
-    ).save("vis/gts.png")
+    ).save(outdir / "gts.png")
 
     print("Optimizing...")
     # build random logits
@@ -160,7 +174,7 @@ def main(max_sam_masks=1000, M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_
             classes = z.argmax(dim=0).view(H, W).cpu().numpy()
             Image.fromarray(
                 (classes / classes.max() * (256**1 - 1)).astype(np.uint8)
-            ).save(f"vis/classes_live_{i}.png")
+            ).save(outdir / f"classes_live_{i}.png")
     print(f"Step {i}, loss={loss.item()}")
 
     # score and visualize
@@ -171,15 +185,20 @@ def main(max_sam_masks=1000, M=32, lr=1, steps=10, temp=1, w_fit=0, w_area=0, w_
     )
     result = sample_result(pred_masks, new_labels, device)
 
-    selected_indices = torch.argsort(
-        mean_scores, descending=True
-    )[:M]
-    sam_res = sample_result(masks[selected_indices].view(-1, H, W).cpu().numpy(), new_labels, device)
+    selected_indices = torch.argsort(mean_scores, descending=True)[:M]
+    sam_res = sample_result(
+        masks[selected_indices].view(-1, H, W).cpu().numpy(), new_labels, device
+    )
     print("adjusted mIoU:", result["mIoU"])
     print("sam mIoU:", sam_res["mIoU"])
+    log_dict["sam_mIoU"] = sam_res["mIoU"]
+    log_dict["adjusted_mIoU"] = result["mIoU"]
+    import json
+    with open(outdir / "log.json", "w") as f:
+        json.dump(log_dict, f)
 
     Image.fromarray((classes / classes.max() * (256**1 - 1)).astype(np.uint8)).save(
-        "vis/classes.png"
+        outdir / "classes.png"
     )
 
 
