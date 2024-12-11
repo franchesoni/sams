@@ -91,10 +91,10 @@ def main(
     w_tree=0,
     outdir="vis",
 ):
+    log_dict = locals() | {"file": __file__}
     # get script name and parameters
     outdir = Path(outdir)
-    outdir.mkdir(exist_ok=True, parents=True)
-    log_dict = locals() | {"file": __file__}
+    (outdir / "live").mkdir(exist_ok=True, parents=True)
     torch.random.manual_seed(0)
     dataset = HypersimSegmentationDataset()
     image, labels = dataset[0]
@@ -161,6 +161,7 @@ def main(
     # optimizer = schedulefree.AdamWScheduleFree([X], lr=lr)
     optimizer = schedulefree.RAdamScheduleFree([X], lr=lr)
     optimizer.train()
+    loss_history = []
 
     # optimize
     for i in range(steps):
@@ -182,6 +183,7 @@ def main(
         #     f"Grad mean: {X.grad.mean().item()}, max: {X.grad.max().item()}, min: {X.grad.min().item()}"
         # )
         optimizer.step()
+        loss_history.append(loss.item())
 
         if i % 10 == 0 or i < 20:
             print(f"Step {i}, loss={loss.item()}", end="\r")
@@ -189,7 +191,7 @@ def main(
             classes = z.argmax(dim=0).view(H, W).cpu().numpy()
             Image.fromarray(
                 (classes / classes.max() * (256**1 - 1)).astype(np.uint8)
-            ).save(outdir / f"classes_live_{i}.png")
+            ).save(outdir / "live" / f"classes_live_{i}.png")
     print(f"Step {i}, loss={loss.item()}")
 
     # score and visualize
@@ -209,17 +211,22 @@ def main(
     log_dict["sam_mIoU"] = sam_res["mIoU"]
     log_dict["adjusted_mIoU"] = result["mIoU"]
     import json
+
     with open(outdir / "log.json", "w") as f:
         json.dump(log_dict, f)
 
     Image.fromarray((classes / classes.max() * (256**1 - 1)).astype(np.uint8)).save(
         outdir / "classes.png"
     )
+    import matplotlib.pyplot as plt
+
+    plt.figure()
+    plt.plot(loss_history)
+    plt.savefig(outdir / "loss.png")
+    plt.close()
 
 
 if __name__ == "__main__":
     from fire import Fire
 
     Fire(main)
-
-# python sam_optim_tree.py --sam_masks=512 --M=512 --w_fit=1 --temp=1 --lr=10 --steps=1000 --w_reg=0.1
