@@ -198,7 +198,7 @@ def main(
     z = torch.sigmoid(X)
     classes = z.argmax(dim=0).view(H, W).cpu().numpy()
     pred_masks = (
-        (z.view(M, H, W) == z.max(dim=0).values.view(1, H, W)).detach().cpu().numpy()
+        z.view(M,H,W)>0.5
     )
     result = sample_result(pred_masks, new_labels, device)
 
