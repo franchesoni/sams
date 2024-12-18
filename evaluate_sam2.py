@@ -36,7 +36,7 @@ def get_mask_generator(
     points_per_batch,
     crop_nms_thresh,
     crop_n_layers,
-    device
+    device,
 ):
     sam2_checkpoint = (
         "/home/franchesoni/sam2/segment-anything-2/checkpoints/sam2.1_hiera_tiny.pt"
@@ -87,15 +87,33 @@ def sample_result(masks, labels, device):
         "mIoU": np.mean(max_ious),
     }
 
+def build_new_labels(labels, min_size=64):
+    # build ground truth masks
+    gts = []
+    for label in np.unique(labels):
+        mask = labels == label
+        gts.append(mask)
+    gts = torch.from_numpy(np.array(gts)).to(device)
+    N, H, W = gts.shape
+    gts = gts.view(N, H * W)
+    gts = gts[gts.sum(dim=1) >= min_size]
+
+    new_labels = np.zeros_like(labels)
+    for i, mask in tqdm.tqdm(enumerate(gts)):
+        new_labels[mask.view(H, W).cpu().numpy()] = i
+    return new_labels
+
+
 
 def main(
     points_per_side=32,
-    stability_score_thresh=0.75,
-    box_nms_thresh=1,
-    pred_iou_thresh=0.75,
+    stability_score_thresh=0,
+    box_nms_thresh=0.95,
+    pred_iou_thresh=0.0,
     points_per_batch=32,
     crop_nms_thresh=1,
     crop_n_layers=0,
+    max_n_masks=512,
 ):
 
     mask_generator = get_mask_generator(
@@ -116,7 +134,12 @@ def main(
         masks, logits, predicted_ious, stability_scores = generate_masks(
             None, image, mask_generator
         )
-        res_per_sample.append(sample_result(masks, labels, device))
+        mean_scores = torch.from_numpy((stability_scores + predicted_ious) / 2)
+        selected_indices = torch.argsort(mean_scores, descending=True)[:max_n_masks]
+        smasks = masks[selected_indices]
+        blabels = build_new_labels(labels)  # labels that are big enough
+        res = sample_result(smasks, blabels, device)
+        res_per_sample.append(res)
 
     np.save(
         "res_per_sample.npy",
