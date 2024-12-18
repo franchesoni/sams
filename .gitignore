@@ -163,3 +163,7 @@ cython_debug/
 
 downloads/
 vis/
+runs/
+evaluation_results/
+*.png
+*.npy
