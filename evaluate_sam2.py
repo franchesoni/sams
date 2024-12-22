@@ -87,6 +87,7 @@ def sample_result(masks, labels, device):
         "mIoU": np.mean(max_ious),
     }
 
+
 def build_new_labels(labels, min_size=64):
     # build ground truth masks
     gts = []
@@ -103,6 +104,25 @@ def build_new_labels(labels, min_size=64):
         new_labels[mask.view(H, W).cpu().numpy()] = i
     return new_labels
 
+
+def generate_masks(path_to_image, image, mask_generator):
+    assert (path_to_image is None and type(image) == Image.Image) or (
+        type(path_to_image) == str and image is None
+    )
+    Path("logits").mkdir(exist_ok=True)
+    if image is None:
+        image = np.array(Image.open(path_to_image).convert("RGB"))
+    else:
+        image = np.array(image)
+    mask_data = mask_generator._generate_masks(image)
+    stability_scores = mask_data["stability_score"]
+    logits = mask_data["low_res_masks"]
+    ious = mask_data["iou_preds"]
+    mask_data["segmentations"] = [
+        rle_to_mask(rle) for rle in mask_data["rles"]
+    ]  # masks
+    masks = np.array(mask_data["segmentations"])
+    return masks, logits, ious, stability_scores
 
 
 def main(
@@ -157,26 +177,6 @@ def main(
         },
     )
     print("end")
-
-
-def generate_masks(path_to_image, image, mask_generator):
-    assert (path_to_image is None and type(image) == Image.Image) or (
-        type(path_to_image) == str and image is None
-    )
-    Path("logits").mkdir(exist_ok=True)
-    if image is None:
-        image = np.array(Image.open(path_to_image).convert("RGB"))
-    else:
-        image = np.array(image)
-    mask_data = mask_generator._generate_masks(image)
-    stability_scores = mask_data["stability_score"]
-    logits = mask_data["low_res_masks"]
-    ious = mask_data["iou_preds"]
-    mask_data["segmentations"] = [
-        rle_to_mask(rle) for rle in mask_data["rles"]
-    ]  # masks
-    masks = np.array(mask_data["segmentations"])
-    return masks, logits, ious, stability_scores
 
 
 if __name__ == "__main__":
